@@ -79,8 +79,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 
-			pass.Reportf(tySwitch.Pos(), "%s", unmatched)
-
 			if len(unmatched) == 0 {
 				return
 			}
