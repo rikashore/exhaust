@@ -13,7 +13,7 @@ type Baz struct{}
 func (Bar) expr() { panic("default") }
 func (Baz) expr() { panic("default") }
 
-func test(i interface{}) {
+func test(i Foo) {
 	switch i.(type) {
 	case Bar:
 		fmt.Println("Bar")

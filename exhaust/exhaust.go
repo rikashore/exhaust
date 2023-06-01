@@ -40,14 +40,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		tySwitch := node.(*ast.TypeSwitchStmt)
 
 		if acquiredType, ok := getType(pass, tySwitch.Assign); ok {
-			// the acquired type being nil means it's the boxed interface{} type
-			// which doesn't make sense to check for exhaustive matching
-			// FIXME: this doesn't accurately check that it's boxed interface type, above reasoning is wrong
-			if acquiredType == nil {
+			// It doesn't make sense to check for an exhaustive match
+			// if the type of is the boxed interface type
+			if _, ok := acquiredType.(*types.Interface); ok {
 				return
 			}
-
-			pass.Reportf(tySwitch.Pos(), "should not have reached")
 
 			var clauseTypes []types.Type
 
