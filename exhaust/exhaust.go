@@ -3,10 +3,11 @@ package exhaust
 import (
 	"go/ast"
 	"go/types"
-	_ "go/types"
+	"golang.org/x/exp/slices"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"strings"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -42,6 +43,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		if acquiredType, ok := getType(pass, tySwitch.Assign); ok {
 			// It doesn't make sense to check for an exhaustive match
 			// if the type of is the boxed interface type
+			// Named interfaces are of type types.Named
 			if _, ok := acquiredType.(*types.Interface); ok {
 				return
 			}
@@ -54,6 +56,48 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				clauseTy := pass.TypesInfo.TypeOf(name)
 				clauseTypes = append(clauseTypes, clauseTy)
 			}
+
+			sc := pass.Pkg.Scope()
+			underlyingInterface := acquiredType.Underlying().(*types.Interface)
+
+			var implementations []types.Type
+
+			for _, objName := range sc.Names() {
+				obj := sc.Lookup(objName)
+				objTy := obj.Type()
+				if types.Implements(objTy, underlyingInterface) && !types.IsInterface(objTy) {
+					implementations = append(implementations, objTy)
+				}
+			}
+
+			var unmatched []types.Type
+
+			for _, ty := range implementations {
+				idx := slices.Index(clauseTypes, ty)
+				if idx == -1 {
+					unmatched = append(unmatched, ty)
+				}
+			}
+
+			pass.Reportf(tySwitch.Pos(), "%s", unmatched)
+
+			if len(unmatched) == 0 {
+				return
+			}
+
+			builder := strings.Builder{}
+
+			for _, unmatchedTy := range unmatched {
+				builder.WriteString("- ")
+				builder.WriteString(types.TypeString(unmatchedTy, types.RelativeTo(pass.Pkg)))
+				builder.WriteString("\n")
+			}
+
+			pass.Reportf(
+				tySwitch.Pos(),
+				"Inexhaustive pattern match for %s, missing cases\n%s",
+				types.TypeString(acquiredType, nil), builder.String(),
+			)
 		}
 	})
 

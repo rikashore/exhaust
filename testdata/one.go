@@ -10,8 +10,11 @@ type Bar struct{}
 
 type Baz struct{}
 
-func (Bar) expr() { panic("default") }
-func (Baz) expr() { panic("default") }
+type Quux struct{}
+
+func (Bar) expr()  { panic("default") }
+func (Baz) expr()  { panic("default") }
+func (Quux) expr() { panic("default") }
 
 func test(i Foo) {
 	switch i.(type) {
