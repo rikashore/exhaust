@@ -2,6 +2,7 @@ package exhaust
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"golang.org/x/exp/slices"
 	"golang.org/x/tools/go/analysis"
@@ -15,6 +16,32 @@ var Analyzer = &analysis.Analyzer{
 	Doc:      "checks exhaustivity of type switches",
 	Run:      run,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
+}
+
+var DefaultExprType = types.NewInterfaceType([]*types.Func{
+	types.NewFunc(
+		token.NoPos,
+		nil,
+		"defaultCase",
+		types.NewSignatureType(
+			nil,
+			nil,
+			nil,
+			nil,
+			types.NewTuple(
+				types.NewVar(
+					token.NoPos,
+					nil, "foo",
+					types.Universe.Lookup("error").Type(),
+				),
+			),
+			false,
+		),
+	),
+}, nil)
+
+func init() {
+	Analyzer.Flags.Bool("ignore-nil", false, "check for exhaustive match even with nil or default case")
 }
 
 func getType(pass *analysis.Pass, stm ast.Stmt) (types.Type, bool) {
@@ -52,9 +79,36 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 			for _, stmt := range tySwitch.Body.List {
 				clause := stmt.(*ast.CaseClause)
+
+				if clause.List == nil {
+					clauseTypes = append(clauseTypes, DefaultExprType)
+					continue
+				}
+
 				name := clause.List[0].(*ast.Ident)
 				clauseTy := pass.TypesInfo.TypeOf(name)
 				clauseTypes = append(clauseTypes, clauseTy)
+			}
+
+			// checks if a `default` or case checking nil is present
+			hasDefaultOrNilCase := func(t types.Type) bool {
+				if types.IdenticalIgnoreTags(t, DefaultExprType) {
+					return true
+				}
+
+				if basic, ok := t.(*types.Basic); ok {
+					return basic.Kind() == 25
+				}
+				return false
+			}
+
+			nilFlag := pass.Analyzer.Flags.Lookup("ignore-nil")
+			ignoreNil := nilFlag.Value.String()
+
+			// Only exit if a default case or nil case is handled
+			// and that we should *not* ignore the nil case
+			if slices.ContainsFunc(clauseTypes, hasDefaultOrNilCase) && ignoreNil == "false" {
+				return
 			}
 
 			sc := pass.Pkg.Scope()
@@ -94,7 +148,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			pass.Reportf(
 				tySwitch.Pos(),
 				"Inexhaustive pattern match for %s, missing cases\n%s",
-				types.TypeString(acquiredType, nil), builder.String(),
+				types.TypeString(acquiredType, types.RelativeTo(pass.Pkg)), builder.String(),
 			)
 		}
 	})

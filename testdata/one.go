@@ -22,5 +22,7 @@ func test(i Foo) {
 		fmt.Println("Bar")
 	case Baz:
 		fmt.Println("Baz")
+	default:
+		fmt.Println("def")
 	}
 }
